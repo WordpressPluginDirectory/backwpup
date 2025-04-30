@@ -231,13 +231,24 @@ class BackWPup_Cron
             return;
         }
 
-        //check runext is allowed for job
-        if ($args['run'] === 'runext') {
-            $jobids_link = BackWPup_Option::get_job_ids('activetype', 'link');
-            $jobids_easycron = BackWPup_Option::get_job_ids('activetype', 'easycron');
-            $jobids_external = array_merge($jobids_link, $jobids_easycron);
-            if (!in_array($args['jobid'], $jobids_external, true)) {
-                return;
+		// check runext is allowed.
+		if ( 'runext' === $args['run'] ) {
+			$should_continue = in_array( BackWPup_Option::get( $args['jobid'], 'activetype', '' ), [ 'link', 'easycron' ], true );
+			/**
+			 * Filter whether BackWPup will allow to start a job with links or not.
+			 *
+			 * @param bool $enable Enable starting job with external link for type "link", default is true if the activetype is link or easycron.
+			 * @param array $args Job args array.
+			 */
+			$should_continue = wpm_apply_filters_typed(
+				'boolean',
+				'backwpup_allow_job_start_with_links',
+				$should_continue,
+				$args
+			);
+			// If we should not continue, return early.
+			if ( ! $should_continue ) {
+				return;
             }
         }
 
@@ -350,31 +361,56 @@ class BackWPup_Cron
             $cron['year'][] = $i;
         }
 
-        //calc next timestamp
-        $current_timestamp = (int) current_time('timestamp');
+		// Calc next timestamp.
+		$current_time_object = current_datetime();
+		$current_time        = $current_time_object->getTimestamp();
 
-        foreach ($cron['year'] as $year) {
-            foreach ($cron['mon'] as $mon) {
-                foreach ($cron['mday'] as $mday) {
-                    if (!checkdate($mon, $mday, $year)) {
-                        continue;
+		foreach ( $cron['year'] as $year ) {
+			foreach ( $cron['mon'] as $mon ) {
+				foreach ( $cron['mday'] as $mday ) {
+					// Get total days in a month.
+					$days_in_month = cal_days_in_month( CAL_GREGORIAN, $mon, $year );
+					/**
+					 * Check if cron month day is greater than total days for that month
+					 * and set month day to the total days for the new month.
+					 */
+					if ( $mday > $days_in_month ) {
+						$mday           = $days_in_month;
+						$cron['mday'][] = $mday;
+					}
+
+					if ( ! checkdate( $mon, $mday, $year ) ) {
+						continue;
                     }
 
-                    foreach ($cron['hours'] as $hours) {
-                        foreach ($cron['minutes'] as $minutes) {
-                            $timestamp = gmmktime($hours, $minutes, 0, $mon, $mday, $year);
-                            if ($timestamp && in_array(
-                                (int) gmdate('j', $timestamp),
-                                $cron['mday'],
-                                true
-                            ) && in_array(
-                                (int) gmdate('w', $timestamp),
-                                $cron['wday'],
-								true
-							) && $timestamp > $current_timestamp ) {
-								$cron_next_timestamp = $timestamp - ( (int) get_option( 'gmt_offset' ) * 3600 );
+					foreach ( $cron['hours'] as $hours ) {
+						foreach ( $cron['minutes'] as $minutes ) {
+							$time      = sprintf(
+								'%04d-%02d-%02d %02d:%02d:00',
+								$year,
+								$mon,
+								$mday,
+								$hours,
+								$minutes
+							);
+							$date      = new DateTimeImmutable( $time, wp_timezone() );
+							$timestamp = $date->getTimestamp();
 
-								return wpm_apply_filters_typed( 'integer', 'backwpup_cron_next', $cron_next_timestamp );
+							if ( $timestamp && in_array(
+								(int) $date->format( 'j' ),
+								$cron['mday'],
+                                true
+							) && in_array(
+								(int) $date->format( 'w' ),
+								$cron['wday'],
+								true
+							) && $timestamp > $current_time ) {
+								/**
+								 * Filters the next cron timestamp
+								 *
+								 * @param int $timestamp The next cron timestamp.
+								 */
+								return wpm_apply_filters_typed( 'integer', 'backwpup_cron_next', $timestamp );
 							}
                         }
                     }
@@ -397,29 +433,11 @@ class BackWPup_Cron
 	 * @return string Cron expression
 	 * @throws InvalidArgumentException If the cron expression is unsupported.
 	 */
-	public static function get_basic_cron_expression( string $basic_expression, $hours = 0, int $minutes = 0, int $day_of_week = 0, string $day_of_month = '' ): string {
+	public static function get_basic_cron_expression( string $basic_expression, $hours = 0, int $minutes = 0, int $day_of_week = 0, string $day_of_month = '1' ): string {
 		$cron = '';
 		switch ( $basic_expression ) {
 			case 'monthly':
-				switch ( $day_of_month ) {
-					case 'first-day':
-						$day_of_month = '1';
-						$day_of_week  = '*';
-						break;
-					case 'first-monday':
-						$day_of_month = '1-7';
-						$day_of_week  = '1';
-						break;
-					case 'first-sunday':
-						$day_of_month = '1-7';
-						$day_of_week  = '0';
-						break;
-					default:
-						$day_of_month = '1';
-						$day_of_week  = '*';
-						break;
-				}
-				$cron = implode( ' ', [ $minutes, $hours, $day_of_month, '*', $day_of_week ] );
+				$cron = implode( ' ', [ $minutes, $hours, $day_of_month, '*', '*' ] );
 				break;
 			case 'weekly':
 				$cron = implode( ' ', [ $minutes, $hours, '*', '*', $day_of_week ] );
@@ -460,11 +478,12 @@ class BackWPup_Cron
 
 		$frequency         = '';
 		$weekly_start_day  = '';
-		$monthly_start_day = '';
+		$monthly_start_day = $day_of_month;
 		$hourly_start_time = 0;
 
-		if ( in_array( $day_of_month, array_keys( $montly_expr ) ) && '*' === $month && in_array( $day_of_week, array_keys( $montly_expr[ $day_of_month ] ) ) // phpcs:ignore WordPress.PHP.StrictInArray.MissingTrueStrict
-		) {
+		if ( '*' !== $day_of_month && 0 < $day_of_month && '*' === $month && '*' === $day_of_week ) {
+			$frequency = 'monthly';
+		} elseif ( in_array( $day_of_month, array_keys( $montly_expr ) ) && '*' === $month && in_array( $day_of_week, array_keys( $montly_expr[ $day_of_month ] ) ) ) { // phpcs:ignore WordPress.PHP.StrictInArray.MissingTrueStrict
 			$frequency         = 'monthly';
 			$monthly_start_day = $montly_expr[ $day_of_month ][ $day_of_week ];
 		} elseif ( '*' === $day_of_month && '*' === $month && '*' !== $day_of_week ) {
