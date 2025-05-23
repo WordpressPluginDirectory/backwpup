@@ -5,7 +5,7 @@ Tags: backup, restore, cloud backup, database backup, wordpress backup
 Requires at least: 4.9
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 5.2.0
+Stable tag: 5.2.3
 License: GPLv2+
 
 Create a complete WordPress backup easily. Schedule automatic backups, store securely, and restore effortlessly with the best WordPress backup plugin! 
@@ -189,6 +189,26 @@ License URI: http://www.gnu.org/licenses/gpl-2.0.html
  
 
 == Changelog ==
+
+= 5.2.3 =
+Release date: May 22, 2025
+
+* Bugfix: Fixed fatal error when both Free and Pro versions are activated together.
+
+= 5.2.2 =
+Release date: May 20, 2025
+
+* New feature: Deselect Website Server as a default storage destination
+* Enhancement: Reduce overall plugin size
+* Bugfix: Google Drive does not remain selected
+* Bugfix: Plugin interface becomes non-functional & not clickable
+* Bugfix: Error during backup for Dropbox storage
+* Bugfix: Dropbox authentication error
+
+= 5.2.1 =
+Release date: April 30, 2025
+
+* Bugfix: Fixed fatal error caused by cal_days_in_month() function on 5.2 for unsupported servers.
 
 = 5.2.0 =
 Release date: April 29, 2025
