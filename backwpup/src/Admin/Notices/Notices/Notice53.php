@@ -47,7 +47,7 @@ class Notice53 extends AbstractNotice {
 
 		$new_version = $this->backwpup->get_plugin_data( 'Version' );
 		// We will show this notice only with version 5.3 and all its sub-versions.
-		return version_compare( $new_version, '5.3', '>=' ) && version_compare( $new_version, '5.4', '<' );
+		return version_compare( $new_version, '5.3', '>=' ) && version_compare( $new_version, '5.3.1', '<' );
 	}
 
 	/**
@@ -56,7 +56,7 @@ class Notice53 extends AbstractNotice {
 	 * @param NoticeMessage $message
 	 */
 	protected function render( NoticeMessage $message ): void {
-		$this->view->info( $message, null );
+		$this->view->success( $message, null );
 	}
 
 	/**

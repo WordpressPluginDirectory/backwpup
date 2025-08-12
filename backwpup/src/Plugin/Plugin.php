@@ -26,6 +26,8 @@ use Inpsyde\BackWPup\Pro\License\LicenseSettingUpdater;
 use Inpsyde\BackWPup\Pro\Settings\EncryptionSettingsView;
 use Inpsyde\BackWPup\Pro\Settings\EncryptionSettingUpdater;
 use WP_CLI;
+use WPMedia\BackWPup\Admin\Options\Options;
+use WPMedia\BackWPup\Dependencies\League\Container\Argument\Literal\StringArgument;
 use WPMedia\BackWPup\Dependencies\League\Container\Container;
 use WPMedia\BackWPup\Dependencies\League\Container\ServiceProvider\ServiceProviderInterface;
 use WPMedia\BackWPup\EventManagement\EventManager;
@@ -47,13 +49,6 @@ class Plugin {
 	private $loaded = false;
 
 	/**
-	 * List of service providers.
-	 *
-	 * @var array
-	 */
-	private $providers;
-
-	/**
 	 * Plugin file path.
 	 *
 	 * @var string
@@ -73,12 +68,10 @@ class Plugin {
 	 * Instantiate the class.
 	 *
 	 * @param Container $container Instance of the container.
-	 * @param array     $providers  Array of service providers.
 	 * @param string    $plugin_path Path to the plugin file.
 	 */
-	public function __construct( Container $container, $providers, string $plugin_path ) {
+	public function __construct( Container $container, string $plugin_path ) {
 		$this->container   = $container;
-		$this->providers   = $providers;
 		$this->plugin_path = $plugin_path;
 
 		add_filter( 'backwpup_container', [ $this, 'get_container' ] );
@@ -181,7 +174,13 @@ class Plugin {
 			}
 		);
 
-		foreach ( $this->providers as $service_provider ) {
+		$this->container->add( 'options_api', Options::class )
+			->addArgument( new StringArgument( 'backwpup_' ) );
+
+		// Load service providers.
+		$providers = require dirname( BACKWPUP_PLUGIN_FILE ) . '/config/providers.php';
+
+		foreach ( $providers as $service_provider ) {
 			$provider_instance = new $service_provider();
 			$this->container->addServiceProvider( $provider_instance );
 

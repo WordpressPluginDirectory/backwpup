@@ -32,6 +32,9 @@ final class BackWPup_Option
 		// Logs.
 		add_site_option( 'backwpup_cfg_maxlogs', 30 );
 		add_site_option( 'backwpup_cfg_gzlogs', 0 );
+		add_site_option( 'backwpup_cfg_mailaddresslog', sanitize_email( get_bloginfo( 'admin_email' ) ) );
+		add_site_option( 'backwpup_cfg_mailaddresssenderlog', sanitize_email( get_bloginfo( 'admin_email' ) ) );
+		add_site_option( 'backwpup_cfg_mailerroronly', true );
 		// Archive format.
 		add_site_option( 'backwpup_archiveformat', '.tar' );
 		$upload_dir   = wp_upload_dir( null, false, true );
@@ -190,6 +193,10 @@ final class BackWPup_Option
 		}
 
 		$jobs_options = self::jobs_options($use_cache);
+
+		if ( ! is_array( $jobs_options ) ) {
+			return false;
+		}
 
 		$jobids    = array_column( $jobs_options, 'jobid' );
 		$job_keys  = array_keys( $jobs_options );
@@ -439,7 +446,7 @@ final class BackWPup_Option
 		$key          = sanitize_key( trim( (string) $key ) );
 		$jobs_options = self::jobs_options( false );
 
-		if ( empty( $jobs_options ) ) {
+		if ( empty( $jobs_options ) || ! is_array( $jobs_options ) ) {
 			return [];
 		}
 
