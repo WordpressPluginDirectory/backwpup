@@ -3,9 +3,9 @@
 Contributors: backwpup, wp_rocket, imagify, nullbyte, cocreation, danielhuesken, wido
 Tags: backup, restore, cloud backup, database backup, wordpress backup
 Requires at least: 4.9
-Tested up to: 6.8
+Tested up to: 6.9
 Requires PHP: 7.4
-Stable tag: 5.6.0
+Stable tag: 5.6.3
 License: GPLv2+
 
 Create a complete WordPress backup easily. Schedule automatic backups, store securely, and restore effortlessly with the best WordPress backup plugin!
@@ -193,6 +193,30 @@ License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
 
 == Changelog ==
+= 5.6.3 =
+Release date: January 20, 2026
+
+* Fix: Backups stored on Amazon Glacier were not listed correctly.
+* Fix: When restoring multiple backups consecutively, the previously selected backup was restored instead of the intended one.
+* Fix: No error message was shown when an FTP error occurred during backup or restore.
+* Fix: Fatal error occurring on Kinsta-hosted environments.
+* Fix: Re-enabled automatic folder protection to prevent backup directories from being publicly accessible.
+* Enhancement: Cache is now flushed after database restore to ensure restored data is properly reflected.
+* Security: Fixed a security vulnerability (CVE-2025-15041).
+
+= 5.6.2 =
+Release date: January 07, 2026
+
+* Fix: Improved validation for the “Max backups to retain” setting to prevent incorrect values.
+* Pro enhancement: Improved license management and added an in-plugin notification to alert users about license status changes.
+
+= 5.6.1 =
+Release date: December 11, 2025
+
+* Fix: Legacy backup job links stopped working after upgrading from version 5.6.0.
+* Fix: Storage configuration was failing for multiple storage providers (Amazon S3, Amazon Glacier, Azure Storage, Google Cloud Storage, OneDrive, Rackspace).
+* Added: Compatibility for legacy backup job link formats to ensure older jobs continue to work without any changes.
+
 = 5.6.0 =
 Release date: November 25, 2025
 
