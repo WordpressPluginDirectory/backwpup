@@ -121,7 +121,7 @@ class BackWPup_Directory extends DirectoryIterator {
 			return [];
 		}
 
-		$folder = untrailingslashit( str_replace( '\\', '/', $folder ) );
+		$folder = untrailingslashit( BackWPup_Path_Fixer::slashify( $folder ) );
 
 		// Prepare variables once.
 		$folders_to_exclude = [];
@@ -164,6 +164,14 @@ class BackWPup_Directory extends DirectoryIterator {
 		} catch ( Exception $e ) { // phpcs:ignore Generic.CodeAnalysis.EmptyStatement.DetectedCatch
 			// Do nothing.
 		}
+
+		// sort files alphabetically.
+		usort(
+			$folders_to_exclude,
+			static function ( $a, $b ) {
+				return strcmp( $a['name'], $b['name'] );
+			}
+		);
 
 		return $folders_to_exclude;
 	}

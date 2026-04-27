@@ -469,8 +469,18 @@ class BackWPup_Job {
 				 * @param string $format The initial extension name.
 				 */
 				$format = wpm_apply_filters_typed( 'string', 'backwpup_generate_archive_extension', $format );
-				if ( ! in_array( $format, [ 'zip', 'tar', 'tar.gz', '.zip', '.tar', '.tar.gz' ], true ) ) {
-					$format = 'tar';
+				$format = self::normalize_archive_extension( $format );
+				if ( ! in_array( $format, BackWPup_Option::get_allowed_archive_formats(), true ) ) {
+					$this->log(
+						sprintf(
+							/* translators: 1: Archive format extension, 2: Filter name. */
+							__( 'Archive format "%1$s" is not allowed and was changed to .tar. Use the %2$s filter to control available formats.', 'backwpup' ),
+							$format,
+							'backwpup_allowed_archive_formats'
+						),
+						E_USER_WARNING
+					);
+					$format = '.tar';
 				}
 				// Create backup archive full file name.
 				$this->backup_file = $this->generate_filename( $archive_filename, $format );
@@ -586,7 +596,7 @@ class BackWPup_Job {
 			),
 			BackWPup::get_plugin_data( 'name' ),
 			BackWPup::get_plugin_data( 'Version' ),
-			__( 'http://backwpup.com', 'backwpup' )
+			__( 'https://backwpup.com', 'backwpup' )
 		) . '<br />' . PHP_EOL;
 		$info .= sprintf(
 			/* translators: 1: WordPress version, 2: site URL. */
@@ -891,6 +901,25 @@ class BackWPup_Job {
 	}
 
 	/**
+	 * Ensures an archive extension starts with a dot.
+	 *
+	 * For legacy reasons, callbacks on the backwpup_generate_archive_extension
+	 * filter are allowed to return the extension without a leading dot
+	 * (e.g. "zip" instead of ".zip"). This method normalizes both forms to
+	 * the dotted canonical format expected everywhere else in the codebase.
+	 *
+	 * @param string $format Extension returned by the filter.
+	 *
+	 * @return string
+	 */
+	public static function normalize_archive_extension( string $format ): string {
+		if ( strpos( $format, '.' ) !== 0 ) {
+			return '.' . $format;
+		}
+		return $format;
+	}
+
+	/**
 	 * Sanitizes a filename, replacing whitespace with underscores.
 	 *
 	 * @param string $filename Filename to sanitize.
@@ -966,14 +995,15 @@ class BackWPup_Job {
 	/**
 	 * Write messages to log file.
 	 *
-	 * @param string $message The error message.
-	 * @param int    $type    The error number (E_USER_ERROR, E_USER_WARNING, E_USER_NOTICE, ...).
-	 * @param string $file    The full path of file with error (__FILE__).
-	 * @param int    $line    The line in that is the error (__LINE__).
+	 * @param string     $message The error message.
+	 * @param int        $type    The error number (E_USER_ERROR, E_USER_WARNING, E_USER_NOTICE, ...).
+	 * @param string     $file    The full path of file with error (__FILE__).
+	 * @param int        $line    The line in that is the error (__LINE__).
+	 * @param array|null $context Optional context payload for error signals.
 	 *
 	 * @return bool True.
 	 */
-	public function log( $message, $type = E_USER_NOTICE, $file = '', $line = 0 ) {
+	public function log( $message, $type = E_USER_NOTICE, $file = '', $line = 0, $context = null ) {
 		// If error has been suppressed with an @.
 		$reporting_level = (int) ini_get( 'error_reporting' );
 		if ( 0 === $reporting_level ) {
@@ -1181,39 +1211,51 @@ class BackWPup_Job {
 			/**
 			 * Fires when BackWPup logs a warning/error (signal).
 			 *
-			 * @param array $signal {
-			 *   Signal data.
+			 * @param array $signal Signal data.
 			 *
-			 *   @type string $level      'error'|'warning'.
-			 *   @type int    $type       PHP error type (E_USER_ERROR, etc).
-			 *   @type string $message    The (already prefixed) message string.
-			 *   @type int    $timestamp  current_time('timestamp').
-			 *   @type int    $job_id     Job ID (if available).
-			 *   @type string $job_name   Job name (if available).
-			 *   @type string $step       Current step identifier.
-			 *   @type string $logfile    Current logfile path (maybe empty).
-			 *   @type string $file       Source file (debug only might be filled).
-			 *   @type int    $line       Source line.
-			 * }
+			 * @type string $level      'error'|'warning'.
+			 * @type int    $type       PHP error type (E_USER_ERROR, etc).
+			 * @type string $message    The (already prefixed) message string.
+			 * @type int    $timestamp  current_time('timestamp').
+			 * @type int    $job_id     Job ID (if available).
+			 * @type string $job_name   Job name (if available).
+			 * @type string $step       Current step identifier.
+			 * @type string $logfile    Current logfile path (maybe empty).
+			 * @type string $file       Source file (debug only might be filled).
+			 * @type int    $line       Source line.
+			 * @type array  $context    Optional context payload.
+			 *   @type string $reason_code   Failure reason code.
+			 *   @type string $destination   Destination identifier.
+			 *   @type string $provider_code Provider-specific reason code.
+			 *   @type int    $http_status   HTTP status code (if any).
 			 *
 			 * @param BackWPup_Job $job The job instance.
 			 */
-			do_action(
-				'backwpup_job_error_signal',
-				[
-					'level'     => $error ? 'error' : 'warning',
-					'type'      => (int) $type,
-					'message'   => (string) $message,
-					'timestamp' => time(),
-					'job_id'    => isset( $this->job['jobid'] ) ? (int) $this->job['jobid'] : 0,
-					'job_name'  => isset( $this->job['name'] ) ? (string) $this->job['name'] : '',
-					'step'      => (string) $this->step_working,
-					'logfile'   => (string) $this->logfile,
-					'file'      => (string) $file,
-					'line'      => (int) $line,
-				],
-				$this
-			);
+			$signal_context = $this->sanitize_signal_context( $context );
+			if ( empty( $signal_context['reason_code'] ) ) {
+				$inferred_reason = $this->infer_signal_reason_code_from_message( (string) $message );
+				if ( '' !== $inferred_reason ) {
+					$signal_context['reason_code'] = $inferred_reason;
+				}
+			}
+			$signal = [
+				'level'     => $error ? 'error' : 'warning',
+				'type'      => (int) $type,
+				'message'   => (string) $message,
+				'timestamp' => time(),
+				'job_id'    => isset( $this->job['jobid'] ) ? (int) $this->job['jobid'] : 0,
+				'job_name'  => isset( $this->job['name'] ) ? (string) $this->job['name'] : '',
+				'step'      => (string) $this->step_working,
+				'logfile'   => (string) $this->logfile,
+				'file'      => (string) $file,
+				'line'      => (int) $line,
+			];
+
+			if ( ! empty( $signal_context ) ) {
+				$signal['context'] = $signal_context;
+			}
+
+			do_action( 'backwpup_job_error_signal', $signal, $this );
 		}
 
 		// true for no more php error handling.
@@ -1230,6 +1272,89 @@ class BackWPup_Job {
 	}
 
 	/**
+	 * Sanitize optional signal context data.
+	 *
+	 * @param mixed $context Optional context payload.
+	 * @return array
+	 */
+	private function sanitize_signal_context( $context ): array {
+		if ( ! is_array( $context ) ) {
+			return [];
+		}
+
+		$allowed = [
+			'reason_code',
+			'destination',
+			'provider_code',
+			'http_status',
+		];
+
+		$clean = [];
+		foreach ( $allowed as $key ) {
+			if ( ! array_key_exists( $key, $context ) ) {
+				continue;
+			}
+
+			$value = $context[ $key ];
+			if ( null === $value ) {
+				continue;
+			}
+
+			if ( 'http_status' === $key ) {
+				$clean[ $key ] = (int) $value;
+				continue;
+			}
+
+			if ( is_scalar( $value ) ) {
+				$clean[ $key ] = trim( (string) $value );
+			}
+		}
+
+		if ( isset( $clean['reason_code'] ) ) {
+			$clean['reason_code'] = strtolower( $clean['reason_code'] );
+		}
+
+		return $clean;
+	}
+
+	/**
+	 * Infer a failure reason code from a log message.
+	 *
+	 * @param string $message Error message.
+	 * @return string
+	 */
+	private function infer_signal_reason_code_from_message( string $message ): string {
+		$normalized = strtolower( trim( $message ) );
+		$normalized = preg_replace( '/^(error|warning|recoverable error|deprecated|strict notice):\s*/i', '', $normalized );
+		$normalized = $normalized ? $normalized : strtolower( trim( $message ) );
+
+		$storage_patterns = [
+			'not enough space',
+			'not enough storage',
+			'no space left on device',
+			'insufficient space',
+			'insufficient storage',
+			'insufficientstorage',
+			'disk full',
+			'storagequotaexceeded',
+			'quotalimitreached',
+			'quotaexceeded',
+			'quota limit',
+			'quota exceeded',
+			'insufficient_space',
+			'quotareached',
+		];
+
+		foreach ( $storage_patterns as $pattern ) {
+			if ( false !== strpos( $normalized, $pattern ) ) {
+				return 'not_enough_storage';
+			}
+		}
+
+		return '';
+	}
+
+	/**
 	 * Change the path for better storing in archives or sync destinations.
 	 *
 	 * @param string $path Path to normalize.
@@ -1241,12 +1366,11 @@ class BackWPup_Job {
 		if ( $this->job['backupabsfolderup'] ) {
 			$abs_path = dirname( $abs_path );
 		}
-		$abs_path = trailingslashit( str_replace( '\\', '/', $abs_path ) );
-
-		$path = str_replace( [ '\\', $abs_path ], '/', (string) $path );
+		$abs_path = trailingslashit( BackWPup_Path_Fixer::slashify( $abs_path ) );
+		$path     = str_replace( $abs_path, '/', BackWPup_Path_Fixer::slashify( $path ) );
 
 		// Replace the colon from Windows drive letters to avoid issues in archives or copying to directories.
-		if ( 0 === stripos( PHP_OS, 'WIN' ) && 1 === strpos( $path, ':/' ) ) {
+		if ( 'Windows' === PHP_OS_FAMILY && 1 === strpos( $path, ':/' ) ) {
 			$path = '/' . substr_replace( $path, '', 1, 1 );
 		}
 
@@ -1317,7 +1441,10 @@ class BackWPup_Job {
 
 		// Check if job aborted.
 		if ( ! file_exists( BackWPup::get_plugin_data( 'running_file' ) ) ) {
-			if ( 'END' !== $this->step_working ) {
+			// The running file is absent in two legitimate cases: during setup ('CREATE'), before it has
+			// been created, and during teardown ('END'), after it has been deleted. Calling end() in
+			// either case would incorrectly treat normal lifecycle phases as a user-triggered abort.
+			if ( 'END' !== $this->step_working && 'CREATE' !== $this->step_working ) {
 				$this->end();
 			}
 		} else {
@@ -1597,13 +1724,7 @@ class BackWPup_Job {
 		$this->substeps_done = 1;
 		$this->steps_done[]  = 'END';
 
-		/**
-		 * Fires when a backup job ends
-		 *
-		 * @param array  $job Job details.
-		 * @param string $backup_file Backup file name.
-		 */
-		do_action( 'backwpup_end_job', $this->job, $this->backup_file );
+		do_action( 'backwpup_end_job', $this->job, $this->backup_file, $this );
 
 		// Clean up temp.
 		self::clean_temp_folder();
@@ -1700,6 +1821,7 @@ class BackWPup_Job {
 		}
 
 		// No restart if no working job.
+		clearstatcache( true, BackWPup::get_plugin_data( 'running_file' ) );
 		if ( ! file_exists( BackWPup::get_plugin_data( 'running_file' ) ) ) {
 			return;
 		}
@@ -1902,6 +2024,7 @@ class BackWPup_Job {
 		global $wpdb;
 
 		// Disable output buffering.
+		ob_implicit_flush( false );
 		$level = ob_get_level();
 		if ( $level ) {
 			for ( $i = 0; $i < $level; ++$i ) {
@@ -1954,11 +2077,8 @@ class BackWPup_Job {
 		set_exception_handler( [ $this, 'exception_handler' ] );
 		// disable Mixpanel error logging.
 		add_filter( 'wp_media_mixpanel_debug', '__return_false' );
-		if ( wp_is_ini_value_changeable( 'zlib.output_compression' ) ) {
+		if ( ! headers_sent() && wp_is_ini_value_changeable( 'zlib.output_compression' ) ) {
 			@ini_set( 'zlib.output_compression', '0' ); // @phpcs:ignore
-		}
-		if ( wp_is_ini_value_changeable( 'implicit_flush' ) ) {
-			@ini_set( 'implicit_flush', '0' ); // @phpcs:ignore
 		}
 		// Set WP max memory limit.
 		if ( wp_is_ini_value_changeable( 'memory_limit' ) ) {
@@ -2594,7 +2714,7 @@ class BackWPup_Job {
 						continue;
 					}
 
-					$files[] = BackWPup_Path_Fixer::slashify( realpath( $path ) );
+					$files[] = $path;
 				}
 			}
 		} catch ( UnexpectedValueException $e ) {
@@ -2704,9 +2824,9 @@ class BackWPup_Job {
 		$manifest['blog_info']['abspath']              = ABSPATH;
 		$manifest['blog_info']['uploads']              = wp_upload_dir( null, false, true );
 		$manifest['blog_info']['contents']['basedir']  = WP_CONTENT_DIR;
-		$manifest['blog_info']['contents']['baseurl']  = WP_CONTENT_URL;
+		$manifest['blog_info']['contents']['baseurl']  = content_url();
 		$manifest['blog_info']['plugins']['basedir']   = WP_PLUGIN_DIR;
-		$manifest['blog_info']['plugins']['baseurl']   = WP_PLUGIN_URL;
+		$manifest['blog_info']['plugins']['baseurl']   = plugins_url();
 		$manifest['blog_info']['themes']['basedir']    = get_theme_root();
 		$manifest['blog_info']['themes']['baseurl']    = get_theme_root_uri();
 
@@ -2833,7 +2953,7 @@ class BackWPup_Job {
 		if ( function_exists( 'putenv' ) ) {
 			putenv( 'nokeepalive=1' ); // @phpcs:ignore
 		}
-		if ( wp_is_ini_value_changeable( 'zlib.output_compression' ) ) {
+		if ( ! headers_sent() && wp_is_ini_value_changeable( 'zlib.output_compression' ) ) {
 			@ini_set( 'zlib.output_compression', '0' ); // @phpcs:ignore
 		}
 
